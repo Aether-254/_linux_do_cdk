@@ -134,9 +134,71 @@ type PaymentInitiation struct {
 	ExpireAt   time.Time `json:"expire_at"`
 }
 
+// buildPaymentInitiation 使用本地订单信息构造易支付跳转地址。
+func buildPaymentInitiation(p *project.Project, cfg *UserPaymentConfig, secret string, order *PaymentOrder) PaymentInitiation {
+	name := truncateRuneLen("CDK-"+p.Name, 60)
+	return PaymentInitiation{
+		OutTradeNo: order.OutTradeNo,
+		PayURL: submitURL(
+			cfg.ClientID,
+			secret,
+			name,
+			moneyString(order.Amount),
+			order.OutTradeNo,
+			callbackNotifyURL(),
+			callbackReturnURL(p.ID),
+		),
+		Amount:   moneyString(order.Amount),
+		ExpireAt: order.ExpireAt,
+	}
+}
+
+// GetPendingPaymentInitiation 查询当前用户在指定项目下仍有效的待支付订单。
+func GetPendingPaymentInitiation(ctx context.Context, p *project.Project, payer *oauth.User) (*PaymentInitiation, error) {
+	if !config.Config.Payment.Enabled || !p.IsPaid() {
+		return nil, nil
+	}
+
+	var order PaymentOrder
+	err := db.DB(ctx).
+		Where(
+			"project_id = ? AND payer_id = ? AND status = ? AND expire_at > ?",
+			p.ID,
+			payer.ID,
+			OrderStatusPending,
+			time.Now(),
+		).
+		Order("id DESC").
+		First(&order).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	cfg, err := GetUserPaymentConfig(ctx, p.CreatorID)
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		return nil, errors.New(ErrCreatorNotConfigured)
+	}
+	if order.PayeeClientID != cfg.ClientID {
+		return nil, errors.New(ErrPendingOrderExists)
+	}
+	secret, err := decryptUserClientSecret(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	init := buildPaymentInitiation(p, cfg, secret, &order)
+	return &init, nil
+}
+
 // InitiatePayment 为付费项目的一次领取行为创建支付订单,并返回前端可直接跳转的支付 URL。
 // 调用方已通过 ReceiveProjectMiddleware 的前置校验。
-// 流程:载入商户凭据 → Redis LPop 预占 item → 持久化订单 PENDING → 构造 submit URL 返回。
+// 流程:载入商户凭据 → 复用已有 PENDING 订单，或 Redis LPop 预占 item 后创建新订单 → 构造 submit URL 返回。
 // 若创建订单失败或拼接失败,需立即把 itemID RPush 回 Redis 以恢复库存。
 func InitiatePayment(ctx context.Context, p *project.Project, payer *oauth.User, clientIP string) (*PaymentInitiation, error) {
 	if !config.Config.Payment.Enabled {
@@ -179,8 +241,9 @@ func InitiatePayment(ctx context.Context, p *project.Project, payer *oauth.User,
 			return err
 		}
 
-		var existedCount int64
-		if err := tx.Model(&PaymentOrder{}).
+		// 存在 COMPLETED/PAID 时阻止重复创建，否则复用最新的 PENDING。
+		var activeOrder PaymentOrder
+		queryErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where(
 				"project_id = ? AND payer_id = ? AND status IN ?",
 				p.ID,
@@ -191,11 +254,26 @@ func InitiatePayment(ctx context.Context, p *project.Project, payer *oauth.User,
 					OrderStatusCompleted,
 				},
 			).
-			Count(&existedCount).Error; err != nil {
-			return err
+			Order("status DESC").
+			Order("id DESC").
+			First(&activeOrder).Error
+		if queryErr == nil {
+			switch activeOrder.Status {
+			case OrderStatusPaid, OrderStatusCompleted:
+				return errors.New(ErrPendingOrderExists)
+			case OrderStatusPending:
+				// 原订单属于旧的商户 ClientID 时无法安全重建签名，等待其按原流程过期释放。
+				if activeOrder.PayeeClientID != cfg.ClientID {
+					return errors.New(ErrPendingOrderExists)
+				}
+
+				init = buildPaymentInitiation(p, cfg, secret, &activeOrder)
+				logger.InfoF(ctx, "Reusing pending payment order %s for project %s and payer %d", activeOrder.OutTradeNo, p.ID, payer.ID)
+			}
+			return nil
 		}
-		if existedCount > 0 {
-			return errors.New(ErrPendingOrderExists)
+		if !errors.Is(queryErr, gorm.ErrRecordNotFound) {
+			return queryErr
 		}
 
 		// 预占 item(Redis LPOP 原子)
@@ -223,22 +301,7 @@ func InitiatePayment(ctx context.Context, p *project.Project, payer *oauth.User,
 			return err
 		}
 
-		// 构造支付跳转 URL(名称最长 64)
-		name := truncateRuneLen("CDK-"+p.Name, 60)
-		init = PaymentInitiation{
-			OutTradeNo: outTradeNo,
-			PayURL: submitURL(
-				cfg.ClientID,
-				secret,
-				name,
-				moneyString(p.Price),
-				outTradeNo,
-				callbackNotifyURL(),
-				callbackReturnURL(p.ID),
-			),
-			Amount:   moneyString(p.Price),
-			ExpireAt: expireAt,
-		}
+		init = buildPaymentInitiation(p, cfg, secret, &order)
 		return nil
 	})
 	if err != nil {

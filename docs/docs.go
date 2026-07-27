@@ -589,6 +589,65 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/projects/{id}/pending-payment": {
+            "get": {
+                "description": "只返回指定项目下当前用户已有且未过期的待支付订单，不重新占用库存或刷新有效期",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "payment"
+                ],
+                "summary": "获取当前用户的待支付订单",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "项目ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/payment.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/payment.PendingPaymentResponseData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/payment.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/project.ProjectResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/payment.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/projects/{id}/receivers": {
             "get": {
                 "consumes": [
@@ -972,6 +1031,29 @@ const docTemplate = `{
                 "data": {
                     "$ref": "#/definitions/oauth.BasicUserInfo"
                 },
+                "error_msg": {
+                    "type": "string"
+                }
+            }
+        },
+        "payment.PendingPaymentResponseData": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "string"
+                },
+                "has_pending": {
+                    "type": "boolean"
+                },
+                "pay_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "payment.Response": {
+            "type": "object",
+            "properties": {
+                "data": {},
                 "error_msg": {
                     "type": "string"
                 }

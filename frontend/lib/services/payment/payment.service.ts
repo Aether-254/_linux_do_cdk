@@ -4,6 +4,8 @@ import {
   PaymentConfigData,
   UpsertPaymentConfigRequest,
   UpsertPaymentConfigResponse,
+  GetPendingPaymentResponse,
+  PendingPaymentData,
 } from './types';
 
 /**
@@ -11,6 +13,27 @@ import {
  */
 export class PaymentService {
   private static readonly base = '/api/v1/users/payment-config';
+
+  static async getPendingPayment(projectId: string): Promise<PendingPaymentData> {
+    const response = await apiClient.get<GetPendingPaymentResponse>(`/api/v1/projects/${projectId}/pending-payment`);
+    if (response.data.error_msg) {
+      throw new Error(response.data.error_msg);
+    }
+    return response.data.data;
+  }
+
+  static async getPendingPaymentSafe(projectId: string): Promise<{
+    success: boolean;
+    data?: PendingPaymentData;
+    error?: string;
+  }> {
+    try {
+      const data = await this.getPendingPayment(projectId);
+      return {success: true, data};
+    } catch (err) {
+      return {success: false, error: err instanceof Error ? err.message : '获取待支付订单失败'};
+    }
+  }
 
   static async getConfig(): Promise<PaymentConfigData> {
     const response = await apiClient.get<GetPaymentConfigResponse>(this.base);

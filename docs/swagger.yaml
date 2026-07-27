@@ -170,6 +170,21 @@ definitions:
       error_msg:
         type: string
     type: object
+  payment.PendingPaymentResponseData:
+    properties:
+      amount:
+        type: string
+      has_pending:
+        type: boolean
+      pay_url:
+        type: string
+    type: object
+  payment.Response:
+    properties:
+      data: {}
+      error_msg:
+        type: string
+    type: object
   project.CreateProjectRequestBody:
     properties:
       allow_same_ip:
@@ -772,6 +787,42 @@ paths:
             $ref: '#/definitions/project.ProjectResponse'
       tags:
       - project
+  /api/v1/projects/{id}/pending-payment:
+    get:
+      description: 只返回指定项目下当前用户已有且未过期的待支付订单，不重新占用库存或刷新有效期
+      parameters:
+      - description: 项目ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/payment.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/payment.PendingPaymentResponseData'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/payment.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/project.ProjectResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/payment.Response'
+      summary: 获取当前用户的待支付订单
+      tags:
+      - payment
   /api/v1/projects/{id}/receivers:
     get:
       consumes:

@@ -116,6 +116,7 @@ func Serve() {
 				projectRouter.PUT("/:id", project.ProjectCreatorPermMiddleware(), project.UpdateProject)
 				projectRouter.DELETE("/:id", project.ProjectCreatorPermMiddleware(), project.DeleteProject)
 				projectRouter.GET("/:id/receivers", project.ProjectCreatorPermMiddleware(), project.ListProjectReceivers)
+				projectRouter.GET("/:id/pending-payment", payment.GetPendingPayment)
 				projectRouter.POST("/:id/receive", project.ReceiveProjectMiddleware(), payment.DispatchReceive)
 				projectRouter.POST("/:id/report", project.ReportProject)
 				projectRouter.GET("/received/chart", project.ListReceiveHistoryChart)

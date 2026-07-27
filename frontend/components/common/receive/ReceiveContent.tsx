@@ -17,6 +17,7 @@ import {ReceiveVerify, ReceiveVerifyRef} from '@/components/common/receive/Recei
 import services from '@/lib/services';
 import {BasicUserInfo} from '@/lib/services/core';
 import {GetProjectResponseData} from '@/lib/services/project';
+import {PendingPaymentData} from '@/lib/services/payment';
 import {formatDate, formatDateTimeWithSeconds, copyToClipboard} from '@/lib/utils';
 import {motion} from 'motion/react';
 import {Separator} from '@/components/ui/separator';
@@ -46,7 +47,11 @@ interface ReceiveButtonProps {
   user: BasicUserInfo | null;
   currentTime: Date;
   isVerifying: boolean;
+  isCheckingPendingPayment: boolean;
+  isContinuingPayment: boolean;
+  pendingPayment: PendingPaymentData | null;
   onReceive: () => void;
+  onContinuePayment: () => void;
 }
 
 /**
@@ -57,11 +62,17 @@ const ReceiveButton = ({
   user,
   currentTime,
   isVerifying,
+  isCheckingPendingPayment,
+  isContinuingPayment,
+  pendingPayment,
   onReceive,
+  onContinuePayment,
 }: ReceiveButtonProps) => {
   const now = currentTime;
   const startTime = new Date(project.start_time);
   const endTime = new Date(project.end_time);
+  const priceNum = Number(project.price || '0');
+  const isPaid = priceNum > 0;
 
   if (now < startTime) {
     const timeRemaining = getTimeRemainingText(startTime, now);
@@ -78,6 +89,28 @@ const ReceiveButton = ({
       <Button disabled className="h-9 w-full cursor-not-allowed rounded-full bg-muted text-muted-foreground shadow-none">
         <AlertCircle className="w-4 h-4 mr-2" />
         项目已结束
+      </Button>
+    );
+  }
+
+  if (isPaid && project.available_items_count <= 0 && isCheckingPendingPayment) {
+    return (
+      <Button disabled className="h-9 w-full cursor-not-allowed rounded-full bg-muted text-muted-foreground shadow-none">
+        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+        正在检查待支付订单
+      </Button>
+    );
+  }
+
+  if (pendingPayment?.has_pending && pendingPayment.pay_url) {
+    return (
+      <Button onClick={onContinuePayment} disabled={isContinuingPayment} className="h-9 w-full rounded-full shadow-none">
+        {isContinuingPayment ?
+          <Loader2 className="w-4 h-4 mr-2 animate-spin" /> :
+          <Coins className="w-4 h-4 mr-2" />}
+        {isContinuingPayment ?
+          '正在打开支付页面' :
+          `继续支付 ${pendingPayment.amount || priceNum} ${CURRENCY_LABEL}`}
       </Button>
     );
   }
@@ -108,9 +141,6 @@ const ReceiveButton = ({
       </Button>
     );
   }
-
-  const priceNum = Number(project.price || '0');
-  const isPaid = priceNum > 0;
 
   return (
     <Button
@@ -268,6 +298,9 @@ export function ReceiveContent({data}: ReceiveContentProps) {
   const [currentProject, setCurrentProject] = useState(project);
   const [isVerifying, setIsVerifying] = useState(false);
   const [isAwaitingPayment, setIsAwaitingPayment] = useState(Boolean(incomingTradeNo) && !project.is_received);
+  const [pendingPayment, setPendingPayment] = useState<PendingPaymentData | null>(null);
+  const [isCheckingPendingPayment, setIsCheckingPendingPayment] = useState(false);
+  const [isContinuingPayment, setIsContinuingPayment] = useState(false);
   const verifyRef = useRef<ReceiveVerifyRef>(null);
 
   /**
@@ -300,6 +333,34 @@ export function ReceiveContent({data}: ReceiveContentProps) {
 
     // 触发验证
     verifyRef.current?.execute();
+  };
+
+  /**
+   * 重新确认待支付订单仍有效，再打开 Credit 收银台。
+   */
+  const handleContinuePayment = async () => {
+    if (!projectId || isContinuingPayment) return;
+
+    setIsContinuingPayment(true);
+    try {
+      const result = await services.payment.getPendingPaymentSafe(projectId);
+      if (!result.success) {
+        toast.error(result.error || '获取待支付订单失败');
+        return;
+      }
+
+      const payment = result.data?.has_pending ? result.data : null;
+      setPendingPayment(payment);
+      if (!payment?.pay_url) {
+        toast.info('待支付订单已过期，请稍后刷新页面重试');
+        return;
+      }
+
+      toast.info('正在跳转支付页面...');
+      window.location.href = payment.pay_url;
+    } finally {
+      setIsContinuingPayment(false);
+    }
   };
 
   /**
@@ -361,6 +422,27 @@ export function ReceiveContent({data}: ReceiveContentProps) {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const isPaidProject = Number(project.price || '0') > 0;
+    if (!projectId || !isPaidProject || hasReceived) {
+      setPendingPayment(null);
+      setIsCheckingPendingPayment(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsCheckingPendingPayment(true);
+    services.payment.getPendingPaymentSafe(projectId).then((result) => {
+      if (cancelled) return;
+      setPendingPayment(result.success && result.data?.has_pending ? result.data : null);
+      setIsCheckingPendingPayment(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [project.price, projectId, hasReceived]);
 
   // 从支付系统回跳后,轮询项目详情直到发放到账或超时
   useEffect(() => {
@@ -650,7 +732,11 @@ export function ReceiveContent({data}: ReceiveContentProps) {
                   user={user}
                   currentTime={currentTime}
                   isVerifying={isVerifying}
+                  isCheckingPendingPayment={isCheckingPendingPayment}
+                  isContinuingPayment={isContinuingPayment}
+                  pendingPayment={pendingPayment}
                   onReceive={handleReceive}
+                  onContinuePayment={handleContinuePayment}
                 />
               </div>
 

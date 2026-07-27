@@ -4,4 +4,6 @@ export type {
   GetPaymentConfigResponse,
   UpsertPaymentConfigRequest,
   UpsertPaymentConfigResponse,
+  PendingPaymentData,
+  GetPendingPaymentResponse,
 } from './types';

@@ -120,6 +120,54 @@ type ReceiveResponse struct {
 	ExpireAt       string `json:"expire_at,omitempty"`
 }
 
+// PendingPaymentResponseData 当前用户在项目下的待支付订单信息。
+type PendingPaymentResponseData struct {
+	HasPending bool   `json:"has_pending"`
+	PayURL     string `json:"pay_url,omitempty"`
+	Amount     string `json:"amount,omitempty"`
+}
+
+// GetPendingPayment
+// @Tags payment
+// @Summary 获取当前用户的待支付订单
+// @Description 只返回指定项目下当前用户已有且未过期的待支付订单，不重新占用库存或刷新有效期
+// @Produce json
+// @Param id path string true "项目ID"
+// @Success 200 {object} Response{data=PendingPaymentResponseData}
+// @Failure 400 {object} Response
+// @Failure 404 {object} project.ProjectResponse
+// @Failure 500 {object} Response
+// @Router /api/v1/projects/{id}/pending-payment [get]
+func GetPendingPayment(c *gin.Context) {
+	ctx := c.Request.Context()
+	currentUser, _ := oauth.GetUserFromContext(c)
+	p := &project.Project{}
+	if err := p.Exact(db.DB(ctx), c.Param("id"), true); err != nil {
+		c.JSON(http.StatusNotFound, project.ProjectResponse{ErrorMsg: err.Error()})
+		return
+	}
+
+	init, err := GetPendingPaymentInitiation(ctx, p, currentUser)
+	if err != nil {
+		if err.Error() == ErrPendingOrderExists {
+			c.JSON(http.StatusBadRequest, Response{ErrorMsg: err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, Response{ErrorMsg: err.Error()})
+		return
+	}
+	if init == nil {
+		c.JSON(http.StatusOK, Response{Data: PendingPaymentResponseData{HasPending: false}})
+		return
+	}
+
+	c.JSON(http.StatusOK, Response{Data: PendingPaymentResponseData{
+		HasPending: true,
+		PayURL:     init.PayURL,
+		Amount:     init.Amount,
+	}})
+}
+
 // DispatchReceive POST /api/v1/projects/:id/receive
 // 运行在 project.ReceiveProjectMiddleware() 之后,已通过资格校验并在 context 注入 project。
 // 付费项目:返回 {require_payment:true, pay_url, ...};前端直接跳转 pay_url。

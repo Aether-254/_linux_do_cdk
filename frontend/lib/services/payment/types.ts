@@ -29,3 +29,12 @@ export interface UpsertPaymentConfigRequest {
 }
 
 export type UpsertPaymentConfigResponse = BackendResponse<null>;
+
+/** 当前用户在指定项目下的待支付订单 */
+export interface PendingPaymentData {
+  has_pending: boolean;
+  pay_url?: string;
+  amount?: string;
+}
+
+export type GetPendingPaymentResponse = BackendResponse<PendingPaymentData>;
