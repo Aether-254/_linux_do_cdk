@@ -3,7 +3,7 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {copyToClipboard} from '@/lib/utils';
-import {ReactNode} from 'react';
+import {ComponentPropsWithoutRef, ReactNode, useState} from 'react';
 import type {Components} from 'react-markdown';
 
 /**
@@ -31,6 +31,57 @@ const getCodeContent = (node: ReactNode): string => {
     }
   }
   return '';
+};
+
+/**
+ * Markdown 图片组件
+ */
+const MarkdownImage = ({src, alt, title}: ComponentPropsWithoutRef<'img'>) => {
+  const [hasError, setHasError] = useState(false);
+  const fallbackText = alt || (typeof src === 'string' ? src : '');
+
+  return (
+    <>
+      {hasError ? (
+        <div
+          className="bg-muted border border-border rounded-lg p-4 text-center text-muted-foreground my-6"
+          role="img"
+          aria-label="图片加载失败"
+        >
+          <svg className="w-12 h-12 mx-auto mb-2" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
+          </svg>
+          <div className="text-sm">图片加载失败</div>
+          <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+            {fallbackText}
+          </div>
+        </div>
+      ) : (
+        <>
+          {/**
+           * 此处使用原生 img 元素而非 Next.js Image 组件。
+           * Markdown 图片通常来自外部源，使用 Next.js Image 会增加域名白名单配置复杂性。
+           */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={src}
+            alt={alt || '图片'}
+            title={title}
+            className="max-w-full h-auto rounded-lg border border-gray-300 dark:border-gray-600 shadow-sm mx-auto block my-6"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            crossOrigin="anonymous"
+            onError={() => setHasError(true)}
+          />
+        </>
+      )}
+      {(alt || title) && (
+        <span className="block text-sm text-gray-500 dark:text-gray-400 text-center italic -mt-4 mb-6">
+          {title || alt}
+        </span>
+      )}
+    </>
+  );
 };
 
 /**
@@ -254,44 +305,7 @@ const markdownComponents: Components = {
   hr: () => (
     <hr className="border-gray-300 dark:border-gray-600 my-6" />
   ),
-  img: ({src, alt, title}) => {
-    return (
-      <>
-        {/*
-         * 注意：此组件中使用原生 img 元素而非 Next.js Image 组件。
-         * Markdown 内容中的图片 URL 通常来自外部源，使用 Next.js Image 组件会导致跨域问题和域名白名单配置复杂性。
-         */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={src}
-          alt={alt || '图片'}
-          title={title}
-          className="max-w-full h-auto rounded-lg border border-gray-300 dark:border-gray-600 shadow-sm mx-auto block my-6"
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          crossOrigin="anonymous"
-          onError={(e) => {
-            const target = e.target as HTMLImageElement;
-            const errorDiv = document.createElement('div');
-            errorDiv.className = 'bg-muted border border-border rounded-lg p-4 text-center text-muted-foreground my-6';
-            errorDiv.innerHTML = `
-              <svg class="w-12 h-12 mx-auto mb-2" fill="currentColor" viewBox="0 0 20 20">
-                <path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd" />
-              </svg>
-              <div class="text-sm">图片加载失败</div>
-              <div class="text-xs text-gray-400 dark:text-gray-500 mt-1">${alt || src}</div>
-            `;
-            target.parentNode?.replaceChild(errorDiv, target);
-          }}
-        />
-        {(alt || title) && (
-          <span className="block text-sm text-gray-500 dark:text-gray-400 text-center italic -mt-4 mb-6">
-            {title || alt}
-          </span>
-        )}
-      </>
-    );
-  },
+  img: MarkdownImage,
   table: ({children}) => (
     <div className="overflow-x-auto mb-6 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
       <table className="min-w-full border-collapse bg-muted">
@@ -301,12 +315,12 @@ const markdownComponents: Components = {
   ),
   thead: ({children}) => (
     <thead className="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-800">
-      {children}
+    {children}
     </thead>
   ),
   tbody: ({children}) => (
     <tbody className="bg-muted divide-y divide-border">
-      {children}
+    {children}
     </tbody>
   ),
   tr: ({children}) => (
