@@ -315,12 +315,12 @@ const markdownComponents: Components = {
   ),
   thead: ({children}) => (
     <thead className="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-800">
-    {children}
+      {children}
     </thead>
   ),
   tbody: ({children}) => (
     <tbody className="bg-muted divide-y divide-border">
-    {children}
+      {children}
     </tbody>
   ),
   tr: ({children}) => (
