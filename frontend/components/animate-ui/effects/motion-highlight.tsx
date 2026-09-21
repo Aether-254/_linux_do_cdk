@@ -188,6 +188,10 @@ function MotionHighlight<T extends string>({
     else if (defaultValue !== undefined) setActiveValue(defaultValue);
   }, [value, defaultValue]);
 
+  React.useEffect(() => {
+    if (mode === 'parent' && activeValue === null) clearBounds();
+  }, [mode, activeValue, clearBounds]);
+
   const id = React.useId();
 
   React.useEffect(() => {
