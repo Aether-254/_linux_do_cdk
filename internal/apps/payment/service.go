@@ -393,14 +393,12 @@ func HandleNotify(ctx context.Context, q map[string]string) (bool, string) {
 
 	// CAS: PENDING -> PAID
 	now := time.Now()
-	rows := db.DB(ctx).Model(&PaymentOrder{}).
-		Where("out_trade_no = ? AND status = ?", outTradeNo, OrderStatusPending).
-		Updates(map[string]any{
-			"status":   OrderStatusPaid,
-			"trade_no": q["trade_no"],
-			"paid_at":  &now,
-		}).RowsAffected
-	if rows == 0 {
+	updated, updateErr := markOrderPaid(db.DB(ctx), outTradeNo, q["trade_no"], now)
+	if updateErr != nil {
+		logger.ErrorF(ctx, "payment notify: failed to mark order %s paid: %v", outTradeNo, updateErr)
+		return false, "update order status failed"
+	}
+	if !updated {
 		// 并发下另一个回调在处理,或订单已过期被扫描任务置 FAILED(itemID 已回滚),此时不再处理
 		// 仍返回 success 让对方停止重试,结果以订单最终状态为准
 		return true, "concurrent or non-pending"
@@ -442,6 +440,20 @@ func HandleNotify(ctx context.Context, q map[string]string) (bool, string) {
 	db.DB(ctx).Model(&PaymentOrder{}).
 		Where("out_trade_no = ?", outTradeNo).Update("status", OrderStatusCompleted)
 	return true, "ok"
+}
+
+func markOrderPaid(tx *gorm.DB, outTradeNo, tradeNo string, paidAt time.Time) (bool, error) {
+	result := tx.Model(&PaymentOrder{}).
+		Where("out_trade_no = ? AND status = ?", outTradeNo, OrderStatusPending).
+		Updates(map[string]any{
+			"status":   OrderStatusPaid,
+			"trade_no": tradeNo,
+			"paid_at":  &paidAt,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
 }
 
 // fulfillPaidOrder 在已确认付款的前提下执行发放事务,复用 project.FulfillForReceiver。
