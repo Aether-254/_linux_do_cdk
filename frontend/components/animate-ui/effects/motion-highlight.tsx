@@ -368,7 +368,6 @@ function MotionHighlightItem({
     setActiveValue,
     mode,
     setBounds,
-    clearBounds,
     hover,
     enabled,
     className: contextClassName,
@@ -392,7 +391,8 @@ function MotionHighlightItem({
 
   React.useEffect(() => {
     if (mode !== 'parent') return;
-    let rafId: number;
+    if (!isActive) return;
+    let rafId: number | null = null;
     let previousBounds: Bounds | null = null;
     const shouldUpdateBounds =
       forceUpdateBounds === true ||
@@ -421,18 +421,18 @@ function MotionHighlightItem({
       setBounds(bounds);
     };
 
-    if (isActive) {
-      updateBounds();
-      setActiveClassName(activeClassName ?? '');
-    } else if (!activeValue) clearBounds();
+    updateBounds();
+    setActiveClassName(activeClassName ?? '');
 
-    if (shouldUpdateBounds) return () => cancelAnimationFrame(rafId);
+    if (shouldUpdateBounds) {
+      return () => {
+        if (rafId !== null) cancelAnimationFrame(rafId);
+      };
+    }
   }, [
     mode,
     isActive,
-    activeValue,
     setBounds,
-    clearBounds,
     activeClassName,
     setActiveClassName,
     forceUpdateBounds,

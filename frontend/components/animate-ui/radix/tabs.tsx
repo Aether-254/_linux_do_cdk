@@ -69,19 +69,32 @@ function TabsList({
   }, []);
 
   React.useEffect(() => {
-    getActiveValue();
+    const container = localRef.current;
+    if (!container) return;
+    const frameId = requestAnimationFrame(getActiveValue);
 
-    const observer = new MutationObserver(getActiveValue);
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (
+          mutation.type === 'attributes' &&
+          mutation.attributeName === 'data-value'
+        ) {
+          continue;
+        }
+        getActiveValue();
+        return;
+      }
+    });
 
-    if (localRef.current) {
-      observer.observe(localRef.current, {
-        attributes: true,
-        childList: true,
-        subtree: true,
-      });
-    }
+    observer.observe(container, {
+      attributes: true,
+      attributeFilter: ['data-state'],
+      childList: true,
+      subtree: false,
+    });
 
     return () => {
+      cancelAnimationFrame(frameId);
       observer.disconnect();
     };
   }, [getActiveValue]);
@@ -193,10 +206,13 @@ function TabsContents({
   React.useEffect(() => {
     if (!containerRef.current) return;
 
+    let frameId: number | null = null;
     const resizeObserver = new ResizeObserver((entries) => {
       const newHeight = entries?.[0]?.contentRect.height;
       if (!newHeight) return;
-      requestAnimationFrame(() => {
+      if (frameId !== null) cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(() => {
+        frameId = null;
         setHeight(newHeight);
       });
     });
@@ -205,6 +221,7 @@ function TabsContents({
 
     return () => {
       resizeObserver.disconnect();
+      if (frameId !== null) cancelAnimationFrame(frameId);
     };
   }, [children]);
 
