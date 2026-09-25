@@ -189,7 +189,7 @@ function MotionHighlight<T extends string>({
   }, [value, defaultValue]);
 
   React.useEffect(() => {
-    if (mode === 'parent' && activeValue === null) clearBounds();
+    if (mode === 'parent' && !activeValue) clearBounds();
   }, [mode, activeValue, clearBounds]);
 
   const id = React.useId();

@@ -73,24 +73,13 @@ function TabsList({
     if (!container) return;
     const frameId = requestAnimationFrame(getActiveValue);
 
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        if (
-          mutation.type === 'attributes' &&
-          mutation.attributeName === 'data-value'
-        ) {
-          continue;
-        }
-        getActiveValue();
-        return;
-      }
-    });
+    const observer = new MutationObserver(getActiveValue);
 
     observer.observe(container, {
       attributes: true,
       attributeFilter: ['data-state'],
       childList: true,
-      subtree: false,
+      subtree: true,
     });
 
     return () => {
